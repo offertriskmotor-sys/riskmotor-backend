@@ -1,27 +1,9 @@
 {
   "name": "riskmotor-backend",
-  "version": "1.0.0",
-  "type":"module",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/offertriskmotor-sys/riskmotor-backend.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/offertriskmotor-sys/riskmotor-backend/issues"
-  },
-  "homepage": "https://github.com/offertriskmotor-sys/riskmotor-backend#readme",
+  "private": true,
+  "type": "module",
   "dependencies": {
-    "googleapis": "^168.0.0",
-    "stripe": "^20.0.0",
-    "zod": "^4.1.13"
+    "googleapis": "^144.0.0",
+    "zod": "^3.23.8"
   }
 }
