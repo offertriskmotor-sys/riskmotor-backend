@@ -1,87 +1,121 @@
-// api/preview.js
 import { z } from "zod";
-import { writeInputReadResult } from "../lib/sheets.js";
+import { appendInputAndGetRow, readCalcRow } from "../lib/sheets.js";
 
-// Tillåt både siffror och sträng-siffror ("520") så du slipper huvudvärk
-const num = z.preprocess((v) => {
-  if (typeof v === "string" && v.trim() !== "") return Number(v);
-  return v;
-}, z.number());
+// ---------- CORS (måste finnas för browser/Lovable) ----------
+function setCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // bra att ha för cache-proxies
+  res.setHeader("Vary", "Origin");
+}
 
-const Schema = z.object({
+// ---------- Input validation ----------
+const InputSchema = z.object({
   jobbtyp: z.string().min(1),
-  timpris: num,
-  timmar: num,
-  materialkostnad: num,
-  ue_kostnad: num,
+  timpris: z.number(),
+  timmar: z.number(),
+  materialkostnad: z.number(),
+  ue_kostnad: z.number().optional().default(0),
   rot: z.enum(["JA", "NEJ"]),
   risknivå: z.enum(["LÅG", "MED", "HÖG"]),
-
-  // valfritt (du kan skicka senare)
-  önskad_marginal: num.optional(),
-  omsättning: num.optional(),
-  internkostnad: num.optional(),
-  totalkostnad: num.optional(),
   email: z.string().email().optional(),
+  önskad_marginal: z.number().optional(),
+  omsättning: z.number().optional(),
+  internkostnad: z.number().optional(),
+  totalkostnad: z.number().optional(),
 });
 
-export default async function handler(req, res) {
-  // 1) METHOD GUARD FÖRST
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).send("Method Not Allowed");
-  }
-
-  // 2) Bygg-markör (så vi vet att rätt kod körs)
-  res.setHeader("x-build-marker", "sheets-v1");
-
-  // 3) Body parse (Vercel kan ge string eller objekt)
-  let body = req.body;
-  if (typeof body === "string") {
-    try {
-      body = JSON.parse(body);
-    } catch {
-      body = {};
-    }
-  }
-
-  // 4) Validera input
-  const parsed = Schema.safeParse(body);
-  if (!parsed.success) {
-    return res.status(422).json({
-      error: "Invalid input",
-      details: parsed.error.flatten(),
+// ---------- Helper: safe parse JSON ----------
+async function readJson(req) {
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(data || "{}"));
+      } catch (e) {
+        reject(e);
+      }
     });
+  });
+}
+
+export default async function handler(req, res) {
+  setCors(res);
+
+  // Preflight
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // 5) Kör Sheets (append + poll + read)
   try {
+    // Vercel brukar redan parse:a JSON ibland, men vi gör robust:
+    const raw = req.body && typeof req.body === "object" ? req.body : await readJson(req);
+
+    const parsed = InputSchema.safeParse(raw);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Invalid input",
+        details: parsed.error.flatten(),
+      });
+    }
+
     const d = parsed.data;
 
-    const result = await writeInputReadResult({
-      jobbtyp: d.jobbtyp,
-      timpris: d.timpris,
-      timmar: d.timmar,
-      materialkostnad: d.materialkostnad,
-      ue_kostnad: d.ue_kostnad,
-      rot: d.rot,
+    // Bygg rad exakt i samma ordning som din sheet förväntar (A–K input)
+    // A jobbtyp
+    // B timpris
+    // C timmar
+    // D materialkostnad
+    // E ue_kostnad
+    // F rot
+    // G önskad_marginal
+    // H risknivå
+    // I omsättning
+    // J internkostnad
+    // K totalkostnad
+    const inputRow = [
+      d.jobbtyp,
+      d.timpris,
+      d.timmar,
+      d.materialkostnad,
+      d.ue_kostnad ?? 0,
+      d.rot,
+      d.önskad_marginal ?? "",
+      d.risknivå,
+      d.omsättning ?? "",
+      d.internkostnad ?? "",
+      d.totalkostnad ?? "",
+    ];
 
-      // valfria
-      onskad_marginal: d.önskad_marginal ?? "",
-      riskniva: d.risknivå,
-      omsattning: d.omsättning ?? "",
-      internkostnad: d.internkostnad ?? "",
-      totalkostnad: d.totalkostnad ?? "",
-    });
+    // 1) Append input → få radindex
+    const rowIndex = await appendInputAndGetRow(inputRow);
 
+    // 2) Läs beräknade kolumner för samma rad (L–Q)
+    const calc = await readCalcRow(rowIndex);
+
+    // calc bör innehålla:
+    // faktisk_marginal, riskklass, åtgärd_för_grön, målmarginal, krav_timpris, diff_timpris
+    // Vi returnerar bara det frontend behöver (plus valfri debug)
+    const riskklass = calc.riskklass;
+    const diff_timpris = Number(calc.diff_timpris ?? 0) || 0;
+    const hint_text = String(calc.åtgärd_för_grön ?? "");
+
+    // Låsning: lås om RÖD eller GUL (du kan justera detta senare utan att röra Sheets)
+    const locked = riskklass !== "GRÖN";
+
+    res.setHeader("x-build-marker", "sheets-v1");
     return res.status(200).json({
-      riskklass: result.riskklass,
-      diff_timpris: result.diff_timpris,
-      hint_text: result.hint_text,
-      locked: result.riskklass === "RÖD" || result.riskklass === "GUL",
+      riskklass,
+      diff_timpris,
+      hint_text,
+      locked,
       debug: {
-        row: result.rowIndex,
-        faktisk_marginal: result.faktisk_marginal,
+        row: rowIndex,
+        faktisk_marginal: calc.faktisk_marginal,
       },
     });
   } catch (err) {
