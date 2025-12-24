@@ -9,23 +9,23 @@ function setCors(res) {
 }
 
 const InputSchema = z.object({
+  // Projekt
   jobbtyp: z.string().min(1),
-  timpris: z.coerce.number(),
-  timmar: z.coerce.number(),
-  materialkostnad: z.coerce.number(),
-  ue_kostnad: z.coerce.number().optional().default(0),
+  ortzon: z.enum(["Storstad", "Mellanstor", "Landsbygd"]),
   rot: z.enum(["JA", "NEJ"]),
+  antal_anstallda: z.coerce.number(),
 
-  // gör risknivå optional (användaren ska inte behöva ange den)
-  risknivå: z.enum(["LÅG", "MED", "HÖG"]).optional(),
+  // Produktion
+  timmar: z.coerce.number(),
+  timpris: z.coerce.number(), // timpris_offert i sheet
+  ue_kostnad: z.coerce.number().optional().default(0),
+  materialkostnad: z.coerce.number(),
 
+  // Subjektiv justering (0/1/2)
+  justering: z.coerce.number().optional().default(0),
+
+  // övrigt
   email: z.string().email().optional(),
-
-  // valfria fält (om du skickar dem senare)
-  önskad_marginal: z.coerce.number().optional(),
-  omsättning: z.coerce.number().optional(),
-  internkostnad: z.coerce.number().optional(),
-  totalkostnad: z.coerce.number().optional(),
 });
 
 export default async function handler(req, res) {
@@ -45,32 +45,24 @@ export default async function handler(req, res) {
 
     const d = parsed.data;
 
-    // Mappa request → sheets.js (svenska tecken -> ascii i paramnamn)
+    // Skriv till INPUT-celler och läs EXPORT-kontraktet
     const result = await writeInputReadResult({
       jobbtyp: d.jobbtyp,
-      timpris: d.timpris,
-      timmar: d.timmar,
-      materialkostnad: d.materialkostnad,
-      ue_kostnad: d.ue_kostnad,
+      ortzon: d.ortzon,
       rot: d.rot,
-
-      // riskniva lämnas tom om den inte skickas
-      riskniva: d.risknivå ?? "",
-
-      onskad_marginal: d.önskad_marginal,
-      omsattning: d.omsättning,
-      internkostnad: d.internkostnad,
-      totalkostnad: d.totalkostnad,
+      antal_anstallda: d.antal_anstallda,
+      timmar: d.timmar,
+      timpris: d.timpris,
+      ue_kostnad: d.ue_kostnad,
+      materialkostnad: d.materialkostnad,
+      justering: d.justering,
     });
 
-    // Markera ny version som läser från EXPORT-tabben
-    res.setHeader("x-build-marker", "sheets-v2");
+    res.setHeader("x-build-marker", "sheets-v3");
 
-    // Returnera hela EXPORT-kontraktet + minimal debug
     return res.status(200).json({
       ...result,
       locked: typeof result.decision === "string" ? result.decision !== "SKICKA" : true,
-      debug: { row: result.rowIndex },
     });
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
