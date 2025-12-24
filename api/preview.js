@@ -1,3 +1,4 @@
+// api/preview.js
 import { z } from "zod";
 
 function setCors(res) {
@@ -14,7 +15,10 @@ const InputSchema = z.object({
   materialkostnad: z.coerce.number(),
   ue_kostnad: z.coerce.number().optional().default(0),
   rot: z.enum(["JA", "NEJ"]),
-  risknivå: z.enum(["LÅG", "MED", "HÖG"]),
+
+  // gör risknivå optional (användaren ska inte behöva ange den)
+  risknivå: z.enum(["LÅG", "MED", "HÖG"]).optional(),
+
   email: z.string().email().optional(),
 
   // valfria fält (om du skickar dem senare)
@@ -41,7 +45,7 @@ export default async function handler(req, res) {
 
     const d = parsed.data;
 
-    // Mappa frontend → sheets.js (svenska tecken -> ascii)
+    // Mappa request → sheets.js (svenska tecken -> ascii i paramnamn)
     const result = await writeInputReadResult({
       jobbtyp: d.jobbtyp,
       timpris: d.timpris,
@@ -49,21 +53,24 @@ export default async function handler(req, res) {
       materialkostnad: d.materialkostnad,
       ue_kostnad: d.ue_kostnad,
       rot: d.rot,
+
+      // riskniva lämnas tom om den inte skickas
+      riskniva: d.risknivå ?? "",
+
       onskad_marginal: d.önskad_marginal,
-      riskniva: d.risknivå,
       omsattning: d.omsättning,
       internkostnad: d.internkostnad,
       totalkostnad: d.totalkostnad,
     });
 
-    res.setHeader("x-build-marker", "sheets-v1");
+    // Markera ny version som läser från EXPORT-tabben
+    res.setHeader("x-build-marker", "sheets-v2");
 
+    // Returnera hela EXPORT-kontraktet + minimal debug
     return res.status(200).json({
-      riskklass: result.riskklass,
-      diff_timpris: result.diff_timpris,
-      hint_text: result.hint_text,
-      locked: result.riskklass !== "GRÖN",
-      debug: { row: result.rowIndex, faktisk_marginal: result.faktisk_marginal },
+      ...result,
+      locked: typeof result.decision === "string" ? result.decision !== "SKICKA" : true,
+      debug: { row: result.rowIndex },
     });
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
