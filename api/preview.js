@@ -15,7 +15,7 @@ const InputSchema = z.object({
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number(),
 
-  // Pris / upplägg (ORD)
+  // Pris/upplägg (TEXT)
   prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
   fastpris: z.coerce.number().optional().default(0),
 
@@ -59,8 +59,9 @@ export default async function handler(req, res) {
       rot: d.rot,
       antal_anstallda: d.antal_anstallda,
 
-      prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
-      fastpris: z.coerce.number().optional().default(0),
+      prismodell: d.prismodell,
+      fastpris: d.fastpris,
+
       timmar: d.timmar,
       timpris: d.timpris,
       ue_kostnad: d.ue_kostnad,
@@ -68,7 +69,7 @@ export default async function handler(req, res) {
       justering: d.justering,
     });
 
-    res.setHeader("x-build-marker", "sheets-v6");
+    res.setHeader("x-build-marker", "sheets-v7");
 
     const locked =
       typeof result.decision === "string"
