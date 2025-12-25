@@ -8,6 +8,26 @@ function setCors(res) {
   res.setHeader("Vary", "Origin");
 }
 
+// Schablontimmar för FAST när användaren inte anger timmar.
+// Rimligt och enkelt. Finjustera senare när du har data.
+function schablonTimmarFAST(jobbtyp, ortzon) {
+  const jt = String(jobbtyp ?? "").trim().toLowerCase();
+
+  // Bas per jobbtyp
+  let h = 160; // default
+  if (jt.includes("service")) h = 40;
+  else if (jt.includes("renover")) h = 160;
+  else if (jt.includes("tillbygg")) h = 220;
+  else if (jt.includes("nybygg")) h = 600;
+
+  // Enkel ortjustering (logistik/störningar)
+  const oz = String(ortzon ?? "").trim();
+  if (oz === "Storstad") h = Math.round(h * 1.10);
+  if (oz === "Landsbygd") h = Math.round(h * 1.10);
+
+  return h;
+}
+
 const InputSchema = z.object({
   // Projekt
   jobbtyp: z.string().min(1),
@@ -20,8 +40,8 @@ const InputSchema = z.object({
   fastpris: z.coerce.number().optional().default(0),
 
   // Produktion
-  timmar: z.coerce.number(),
-  timpris: z.coerce.number(), // timpris_offert i sheet
+  timmar: z.coerce.number().optional().default(0),
+  timpris: z.coerce.number().optional().default(0), // timpris_offert i sheet
   ue_kostnad: z.coerce.number().optional().default(0),
   materialkostnad: z.coerce.number(),
 
@@ -53,6 +73,19 @@ export default async function handler(req, res) {
 
     const d = parsed.data;
 
+    // Normalisering:
+    // - FAST: timpris ska inte anges => 0
+    // - FAST: timmar ska kunna utelämnas => schablon om <= 0
+    let timmar = Number(d.timmar ?? 0);
+    let timpris = Number(d.timpris ?? 0);
+
+    if (d.prismodell === "FAST") {
+      timpris = 0;
+      if (!Number.isFinite(timmar) || timmar <= 0) {
+        timmar = schablonTimmarFAST(d.jobbtyp, d.ortzon);
+      }
+    }
+
     const result = await writeInputReadResult({
       jobbtyp: d.jobbtyp,
       ortzon: d.ortzon,
@@ -62,8 +95,8 @@ export default async function handler(req, res) {
       prismodell: d.prismodell,
       fastpris: d.fastpris,
 
-      timmar: d.timmar,
-      timpris: d.timpris,
+      timmar,
+      timpris,
       ue_kostnad: d.ue_kostnad,
       materialkostnad: d.materialkostnad,
       justering: d.justering,
@@ -71,6 +104,7 @@ export default async function handler(req, res) {
 
     res.setHeader("x-build-marker", "sheets-v7");
 
+    // locked: lås allt som inte är SKICKA (som du redan kör)
     const locked =
       typeof result.decision === "string"
         ? result.decision.trim() !== "SKICKA"
