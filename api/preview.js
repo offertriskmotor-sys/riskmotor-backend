@@ -24,7 +24,7 @@ const InputSchema = z.object({
   // Subjektiv justering (0/1/2)
   justering: z.coerce.number().optional().default(0),
 
-  // övrigt
+  // Övrigt
   email: z.string().email().optional(),
 });
 
@@ -32,7 +32,9 @@ export default async function handler(req, res) {
   setCors(res);
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
   try {
     // Lazy import så OPTIONS aldrig laddar Google
@@ -40,12 +42,15 @@ export default async function handler(req, res) {
 
     const parsed = InputSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      return res.status(400).json({
+        error: "Invalid input",
+        details: parsed.error.flatten(),
+      });
     }
 
     const d = parsed.data;
 
-    // Skriv till INPUT-celler och läs EXPORT-kontraktet
+    // Skriv till INPUT + läs EXPORT (run_id-säkrad)
     const result = await writeInputReadResult({
       jobbtyp: d.jobbtyp,
       ortzon: d.ortzon,
@@ -58,11 +63,18 @@ export default async function handler(req, res) {
       justering: d.justering,
     });
 
-    res.setHeader("x-build-marker", "sheets-v3");
+    // Marker för felsökning/versionering
+    res.setHeader("x-build-marker", "sheets-v4");
+
+    // Låsning baserad på beslut
+    const locked =
+      typeof result.decision === "string"
+        ? result.decision.trim() !== "SKICKA"
+        : true;
 
     return res.status(200).json({
       ...result,
-      locked: typeof result.decision === "string" ? result.decision !== "SKICKA" : true,
+      locked,
     });
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
