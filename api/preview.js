@@ -9,7 +9,7 @@ function setCors(res) {
 }
 
 // Schablontimmar för FAST när användaren inte anger timmar.
-// Rimligt och enkelt. Finjustera senare när du har data.
+// Enkel, rimlig default. Finjustera när du har data.
 function schablonTimmarFAST(jobbtyp, ortzon) {
   const jt = String(jobbtyp ?? "").trim().toLowerCase();
 
@@ -20,7 +20,7 @@ function schablonTimmarFAST(jobbtyp, ortzon) {
   else if (jt.includes("tillbygg")) h = 220;
   else if (jt.includes("nybygg")) h = 600;
 
-  // Enkel ortjustering (logistik/störningar)
+  // Ortjustering (störningar/logistik)
   const oz = String(ortzon ?? "").trim();
   if (oz === "Storstad") h = Math.round(h * 1.10);
   if (oz === "Landsbygd") h = Math.round(h * 1.10);
@@ -35,11 +35,12 @@ const InputSchema = z.object({
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number(),
 
-  // Pris/upplägg (TEXT)
+  // Pris/upplägg
   prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
   fastpris: z.coerce.number().optional().default(0),
 
   // Produktion
+  // Vid FAST: timmar/timpris får vara tomt (backend fyller timmar med schablon, timpris=0)
   timmar: z.coerce.number().optional().default(0),
   timpris: z.coerce.number().optional().default(0), // timpris_offert i sheet
   ue_kostnad: z.coerce.number().optional().default(0),
@@ -74,15 +75,17 @@ export default async function handler(req, res) {
     const d = parsed.data;
 
     // Normalisering:
-    // - FAST: timpris ska inte anges => 0
-    // - FAST: timmar ska kunna utelämnas => schablon om <= 0
+    // - FAST: användaren ska inte ange timpris => 0
+    // - FAST: timmar kan utelämnas => schablon om <= 0
     let timmar = Number(d.timmar ?? 0);
     let timpris = Number(d.timpris ?? 0);
+    let schablon_timmar = false;
 
     if (d.prismodell === "FAST") {
       timpris = 0;
       if (!Number.isFinite(timmar) || timmar <= 0) {
         timmar = schablonTimmarFAST(d.jobbtyp, d.ortzon);
+        schablon_timmar = true;
       }
     }
 
@@ -102,15 +105,21 @@ export default async function handler(req, res) {
       justering: d.justering,
     });
 
+    // Behåll din marker (ändra om du vill bumpa version)
     res.setHeader("x-build-marker", "sheets-v7");
 
-    // locked: lås allt som inte är SKICKA (som du redan kör)
+    // locked: lås allt som inte är SKICKA
     const locked =
       typeof result.decision === "string"
         ? result.decision.trim() !== "SKICKA"
         : true;
 
-    return res.status(200).json({ ...result, locked });
+    return res.status(200).json({
+      ...result,
+      locked,
+      schablon_timmar,
+      timmar_kalla: schablon_timmar ? "SCHABLON" : "ANGIVET",
+    });
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
     return res.status(500).json({
