@@ -31,7 +31,7 @@ function schablonTimmarFAST(jobbtyp, ortzon) {
 const InputSchema = z.object({
   // Projekt
   jobbtyp: z.string().min(1),
-  ortzon: z.enum(["Storstad", "Mellanstor", "Landsbygd"]),
+  ortzon: z.enum(["Storstad", "Mellanstor", "Landsbygd", "Turistort"]),
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number(),
 
