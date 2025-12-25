@@ -15,9 +15,9 @@ const InputSchema = z.object({
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number(),
 
-  // Pris / upplägg (matchar din sheet)
-  prismodell: z.coerce.number().optional().default(1), // 1 = LÖPANDE, 2 = FAST
-  fastpris: z.coerce.number().optional().default(0),   // endast relevant om prismodell=2
+  // Pris / upplägg (ORD)
+  prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
+  fastpris: z.coerce.number().optional().default(0),
 
   // Produktion
   timmar: z.coerce.number(),
@@ -41,7 +41,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Lazy import så OPTIONS aldrig laddar Google
     const { writeInputReadResult } = await import("../lib/sheets.js");
 
     const parsed = InputSchema.safeParse(req.body ?? {});
@@ -54,16 +53,14 @@ export default async function handler(req, res) {
 
     const d = parsed.data;
 
-    // Skriv till INPUT + läs EXPORT (run_id-säkrad)
     const result = await writeInputReadResult({
       jobbtyp: d.jobbtyp,
       ortzon: d.ortzon,
       rot: d.rot,
       antal_anstallda: d.antal_anstallda,
 
-      prismodell: d.prismodell,
-      fastpris: d.fastpris,
-
+      prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
+      fastpris: z.coerce.number().optional().default(0),
       timmar: d.timmar,
       timpris: d.timpris,
       ue_kostnad: d.ue_kostnad,
@@ -71,19 +68,14 @@ export default async function handler(req, res) {
       justering: d.justering,
     });
 
-    // Marker för felsökning/versionering
-    res.setHeader("x-build-marker", "sheets-v5");
+    res.setHeader("x-build-marker", "sheets-v6");
 
-    // Låsning baserad på beslut
     const locked =
       typeof result.decision === "string"
         ? result.decision.trim() !== "SKICKA"
         : true;
 
-    return res.status(200).json({
-      ...result,
-      locked,
-    });
+    return res.status(200).json({ ...result, locked });
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
     return res.status(500).json({
