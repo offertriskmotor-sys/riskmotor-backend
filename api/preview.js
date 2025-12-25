@@ -15,6 +15,10 @@ const InputSchema = z.object({
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number(),
 
+  // Pris / upplägg (matchar din sheet)
+  prismodell: z.coerce.number().optional().default(1), // 1 = LÖPANDE, 2 = FAST
+  fastpris: z.coerce.number().optional().default(0),   // endast relevant om prismodell=2
+
   // Produktion
   timmar: z.coerce.number(),
   timpris: z.coerce.number(), // timpris_offert i sheet
@@ -56,6 +60,10 @@ export default async function handler(req, res) {
       ortzon: d.ortzon,
       rot: d.rot,
       antal_anstallda: d.antal_anstallda,
+
+      prismodell: d.prismodell,
+      fastpris: d.fastpris,
+
       timmar: d.timmar,
       timpris: d.timpris,
       ue_kostnad: d.ue_kostnad,
@@ -64,7 +72,7 @@ export default async function handler(req, res) {
     });
 
     // Marker för felsökning/versionering
-    res.setHeader("x-build-marker", "sheets-v4");
+    res.setHeader("x-build-marker", "sheets-v5");
 
     // Låsning baserad på beslut
     const locked =
