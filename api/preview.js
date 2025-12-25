@@ -9,36 +9,28 @@ function setCors(res) {
 }
 
 const InputSchema = z.object({
-  // Projekt
   jobbtyp: z.string().min(1),
   ortzon: z.enum(["Storstad", "Mellanstor", "Landsbygd", "Turistort"]),
   rot: z.enum(["JA", "NEJ"]),
   antal_anstallda: z.coerce.number().default(1),
 
-  // Pris/upplägg
   prismodell: z.enum(["LÖPANDE", "FAST"]).default("LÖPANDE"),
   fastpris: z.coerce.number().optional().default(0),
 
-  // Produktion (gör valfria så FAST kan köras utan timmar/timpris)
+  // Valfria (Sheets kan schablona om du har låst/formler där)
   timmar: z.coerce.number().optional().default(0),
-  timpris: z.coerce.number().optional().default(0), // timpris_offert i sheet
+  timpris: z.coerce.number().optional().default(0),
   ue_kostnad: z.coerce.number().optional().default(0),
   materialkostnad: z.coerce.number().default(0),
 
-  // Subjektiv justering (0/1/2)
   justering: z.coerce.number().optional().default(0),
-
-  // Övrigt
-  email: z.string().email().optional(),
 });
 
 export default async function handler(req, res) {
   setCors(res);
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
   try {
     const { writeInputReadResult } = await import("../lib/sheets.js");
@@ -58,36 +50,17 @@ export default async function handler(req, res) {
       ortzon: d.ortzon,
       rot: d.rot,
       antal_anstallda: d.antal_anstallda,
-
       prismodell: d.prismodell,
-      fastpris: d.fastpris,
-
       timmar: d.timmar,
       timpris: d.timpris,
+      fastpris: d.fastpris,
       ue_kostnad: d.ue_kostnad,
       materialkostnad: d.materialkostnad,
       justering: d.justering,
     });
 
     res.setHeader("x-build-marker", "sheets-v7");
-
-    // Låslogik: allt som inte är SKICKA ska vara låst
-    const locked =
-      typeof result.decision === "string"
-        ? String(result.decision).trim() !== "SKICKA"
-        : true;
-
-    // Byt bort fältet med förbjudet ord
-    // - ta bort action_review_scope
-    // - ersätt med action_review_details (boolean "JA"/"NEJ" eller vad sheeten skickar)
-    const cleaned = { ...result, locked };
-
-    if (Object.prototype.hasOwnProperty.call(cleaned, "action_review_scope")) {
-      cleaned.action_review_details = cleaned.action_review_scope;
-      delete cleaned.action_review_scope;
-    }
-
-    return res.status(200).json(cleaned);
+    return res.status(200).json(result);
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
     return res.status(500).json({
