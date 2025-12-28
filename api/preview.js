@@ -59,7 +59,8 @@ export default async function handler(req, res) {
       justering: d.justering,
     });
 
-    res.setHeader("x-build-marker", "sheets-v7");
+    // Marker so you can see you're on the "svenska fältnamn"-version
+    res.setHeader("x-build-marker", "sheets-v8-sv");
     return res.status(200).json(result);
   } catch (err) {
     console.error("PREVIEW ERROR:", err);
